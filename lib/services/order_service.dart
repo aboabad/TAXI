@@ -4,48 +4,55 @@ import 'package:taxi/models/order_model.dart';
 class OrderService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  // Create a new order/booking
   Future<String> createOrder(OrderModel order) async {
     final docRef = await _db.collection('orders').add(order.toMap());
     return docRef.id;
   }
 
-  // Stream of orders for a specific user
   Stream<List<OrderModel>> streamUserOrders(String userId) {
     return _db
         .collection('orders')
         .where('userId', isEqualTo: userId)
-        .orderBy('createdAt', descending: true)
         .snapshots()
-        .map(
-          (snapshot) => snapshot.docs
-          .map((doc) => OrderModel.fromFirestore(doc))
-          .toList(),
-    );
+        .map((snapshot) {
+      final orders = snapshot.docs.map(OrderModel.fromFirestore).toList();
+      orders.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return orders;
+    });
   }
 
-  // Stream of available orders for drivers
+  Stream<List<OrderModel>> streamRestaurantOrders(String restaurantId) {
+    return _db
+        .collection('orders')
+        .where('restaurantId', isEqualTo: restaurantId)
+        .snapshots()
+        .map((snapshot) {
+      final orders = snapshot.docs.map(OrderModel.fromFirestore).toList();
+      orders.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return orders;
+    });
+  }
+
   Stream<List<OrderModel>> streamAvailableOrders() {
     return _db
         .collection('orders')
-        .where('status', isEqualTo: 'pending')
-        .orderBy('createdAt', descending: true)
+        .where('status', isEqualTo: OrderStatus.restaurantAccepted.name)
         .snapshots()
-        .map(
-          (snapshot) => snapshot.docs
-          .map((doc) => OrderModel.fromFirestore(doc))
-          .toList(),
-    );
+        .map((snapshot) {
+      final orders = snapshot.docs.map(OrderModel.fromFirestore).toList();
+      orders.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return orders;
+    });
   }
 
-  // Update order status
   Future<void> updateOrderStatus(
-      String orderId,
-      OrderStatus status, {
-        String? driverId,
-      }) async {
-    final Map<String, dynamic> data = {
-      'status': status.toString().split('.').last,
+    String orderId,
+    OrderStatus status, {
+    String? driverId,
+  }) async {
+    final data = <String, dynamic>{
+      'status': status.name,
+      'updatedAt': FieldValue.serverTimestamp(),
     };
 
     if (driverId != null) {
