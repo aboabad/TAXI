@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 enum OrderStatus {
   pending,
+  restaurantAccepted,
   accepted,
   preparing,
   onTheWay,
@@ -76,14 +77,12 @@ class OrderModel {
     final data = doc.data() ?? {};
     return OrderModel(
       id: doc.id,
-      userId: data['userId'] ?? '',
-      restaurantId: data['restaurantId'] ?? '',
-      restaurantName: data['restaurantName'] ?? '',
-      driverId: data['driverId'],
+      userId: data['userId']?.toString() ?? '',
+      restaurantId: data['restaurantId']?.toString() ?? '',
+      restaurantName: data['restaurantName']?.toString() ?? '',
+      driverId: data['driverId']?.toString(),
       peopleCount: _toInt(data['peopleCount'], defaultValue: 1),
-      bookingDate: data['bookingDate'] is Timestamp
-          ? (data['bookingDate'] as Timestamp).toDate()
-          : DateTime.now(),
+      bookingDate: _toDateTime(data['bookingDate']),
       bookingDuration: _toInt(data['bookingDuration'], defaultValue: 1),
       items: _parseItems(data['items']),
       restaurantPrice: _toDouble(data['restaurantPrice']),
@@ -91,8 +90,8 @@ class OrderModel {
       returnDistanceKm: _toDouble(data['returnDistanceKm']),
       roundTripDeliveryPrice: _toDouble(data['roundTripDeliveryPrice']),
       discount: _toDouble(data['discount']),
-      pickupLocation: data['pickupLocation'],
-      returnLocation: data['returnLocation'],
+      pickupLocation: data['pickupLocation']?.toString(),
+      returnLocation: data['returnLocation']?.toString(),
       foodTotal: _toDouble(data['foodTotal']),
       subtotal: _toDouble(data['subtotal']),
       totalPrice: _toDouble(data['totalPrice']),
@@ -104,10 +103,8 @@ class OrderModel {
       driverNetAmount: _toDouble(data['driverNetAmount']),
       adminRevenue: _toDouble(data['adminRevenue']),
       status: _statusFromString(data['status']),
-      createdAt: data['createdAt'] is Timestamp
-          ? (data['createdAt'] as Timestamp).toDate()
-          : DateTime.now(),
-      note: data['note'],
+      createdAt: _toDateTime(data['createdAt']),
+      note: data['note']?.toString(),
     );
   }
 
@@ -188,14 +185,16 @@ class OrderModel {
       restaurantPrice: restaurantPrice ?? this.restaurantPrice,
       outboundDistanceKm: outboundDistanceKm ?? this.outboundDistanceKm,
       returnDistanceKm: returnDistanceKm ?? this.returnDistanceKm,
-      roundTripDeliveryPrice: roundTripDeliveryPrice ?? this.roundTripDeliveryPrice,
+      roundTripDeliveryPrice:
+          roundTripDeliveryPrice ?? this.roundTripDeliveryPrice,
       discount: discount ?? this.discount,
       pickupLocation: pickupLocation ?? this.pickupLocation,
       returnLocation: returnLocation ?? this.returnLocation,
       foodTotal: foodTotal ?? this.foodTotal,
       subtotal: subtotal ?? this.subtotal,
       totalPrice: totalPrice ?? this.totalPrice,
-      restaurantCommissionRate: restaurantCommissionRate ?? this.restaurantCommissionRate,
+      restaurantCommissionRate:
+          restaurantCommissionRate ?? this.restaurantCommissionRate,
       restaurantCommission: restaurantCommission ?? this.restaurantCommission,
       restaurantNetAmount: restaurantNetAmount ?? this.restaurantNetAmount,
       driverCommissionRate: driverCommissionRate ?? this.driverCommissionRate,
@@ -206,6 +205,13 @@ class OrderModel {
       createdAt: createdAt ?? this.createdAt,
       note: note ?? this.note,
     );
+  }
+
+  static DateTime _toDateTime(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value) ?? DateTime.now();
+    return DateTime.now();
   }
 
   static double _toDouble(dynamic value) {
@@ -223,11 +229,16 @@ class OrderModel {
 
   static List<Map<String, dynamic>> _parseItems(dynamic value) {
     if (value is! List) return [];
-    return value.whereType<Map>().map((item) => Map<String, dynamic>.from(item)).toList();
+    return value
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
   }
 
   static OrderStatus _statusFromString(dynamic value) {
     switch (value?.toString()) {
+      case 'restaurantAccepted':
+        return OrderStatus.restaurantAccepted;
       case 'accepted':
         return OrderStatus.accepted;
       case 'preparing':
