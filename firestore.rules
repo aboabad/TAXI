@@ -1,0 +1,26 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // قواعد مجموعة المستخدمين
+    match /users/{userId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // قواعد مجموعة المطاعم
+    match /restaurants/{restaurantId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    // قواعد مجموعة الطلبات
+    match /orders/{orderId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // قواعد الشات
+    match /chats/{chatId} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}

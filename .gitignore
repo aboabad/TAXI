@@ -1,0 +1,63 @@
+# Flutter / Dart
+.dart_tool/
+.packages
+.pub/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# IDE
+*.iml
+.idea/
+.vscode/
+
+# Gradle / Android
+.gradle/
+android/.gradle/
+android/local.properties
+local.properties
+.externalNativeBuild/
+.cxx/
+captures/
+
+# iOS / macOS
+.DS_Store
+ios/Pods/
+ios/.symlinks/
+macos/Pods/
+macos/.symlinks/
+
+# Logs / temporary files
+*.log
+flutter_build.txt
+
+# Secrets / signing
+*.jks
+*.keystore
+key.properties
+android/key.properties
+
+# Environment files
+.env
+.env.*
+
+# Firebase local/emulator files
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+
+# Misc
+coverage/
+# Local AI / agent tooling
+.agents/
+.artifacts/
+.claude/
+agent/
+
+# Debug/build logs
+android/errors.txt
+android/firebase_build.txt
+android/firebase_debug.txt
+android/gradle_app_debug.txt
+*.log

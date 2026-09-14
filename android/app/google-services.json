@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "444465464375",
+    "project_id": "love-5d872",
+    "storage_bucket": "love-5d872.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:444465464375:android:25e9996dff0a5f29f7ebb2",
+        "android_client_info": {
+          "package_name": "com.abood.tia"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCVGnQFPOC0q9qQCr3b4zu5fnyD7QzX_Vw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
