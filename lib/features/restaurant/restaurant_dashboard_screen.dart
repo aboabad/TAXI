@@ -11,10 +11,7 @@ import 'package:taxi/services/order_service.dart';
 class RestaurantDashboardScreen extends StatefulWidget {
   final String? restaurantId;
 
-  const RestaurantDashboardScreen({
-    super.key,
-    this.restaurantId,
-  });
+  const RestaurantDashboardScreen({super.key, this.restaurantId});
 
   @override
   State<RestaurantDashboardScreen> createState() =>
@@ -24,20 +21,21 @@ class RestaurantDashboardScreen extends StatefulWidget {
 class _RestaurantDashboardScreenState extends State<RestaurantDashboardScreen> {
   int _selectedIndex = 0;
   String? _restaurantId;
-  bool _loadingRestaurant = true;
-  String? _restaurantError;
+  bool _loading = true;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _resolveRestaurantId();
+    _resolveRestaurant();
   }
 
-  Future<void> _resolveRestaurantId() async {
-    if (widget.restaurantId != null && widget.restaurantId!.trim().isNotEmpty) {
+  Future<void> _resolveRestaurant() async {
+    final supplied = widget.restaurantId?.trim();
+    if (supplied != null && supplied.isNotEmpty) {
       setState(() {
-        _restaurantId = widget.restaurantId!.trim();
-        _loadingRestaurant = false;
+        _restaurantId = supplied;
+        _loading = false;
       });
       return;
     }
@@ -45,75 +43,49 @@ class _RestaurantDashboardScreenState extends State<RestaurantDashboardScreen> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       setState(() {
-        _loadingRestaurant = false;
-        _restaurantError = 'يجب تسجيل الدخول أولاً';
+        _error = 'يجب تسجيل الدخول أولاً';
+        _loading = false;
       });
       return;
     }
 
     try {
-      final restaurants = FirebaseFirestore.instance.collection('restaurants');
+      final ref = FirebaseFirestore.instance.collection('restaurants');
+      QueryDocumentSnapshot<Map<String, dynamic>>? found;
 
-      final byUid = await restaurants
-          .where('ownerUid', isEqualTo: user.uid)
-          .limit(1)
-          .get();
-      if (byUid.docs.isNotEmpty) {
-        if (!mounted) return;
-        setState(() {
-          _restaurantId = byUid.docs.first.id;
-          _loadingRestaurant = false;
-        });
-        return;
-      }
+      final byUid = await ref.where('ownerUid', isEqualTo: user.uid).limit(1).get();
+      if (byUid.docs.isNotEmpty) found = byUid.docs.first;
 
       final email = user.email?.trim().toLowerCase();
-      if (email != null && email.isNotEmpty) {
-        final byEmail = await restaurants
+      if (found == null && email != null && email.isNotEmpty) {
+        final byEmail = await ref
             .where('ownerUsername', isEqualTo: email)
             .limit(1)
             .get();
-        if (byEmail.docs.isNotEmpty) {
-          if (!mounted) return;
-          setState(() {
-            _restaurantId = byEmail.docs.first.id;
-            _loadingRestaurant = false;
-          });
-          return;
-        }
-      }
-
-      final sameId = await restaurants.doc(user.uid).get();
-      if (sameId.exists) {
-        if (!mounted) return;
-        setState(() {
-          _restaurantId = sameId.id;
-          _loadingRestaurant = false;
-        });
-        return;
+        if (byEmail.docs.isNotEmpty) found = byEmail.docs.first;
       }
 
       if (!mounted) return;
       setState(() {
-        _loadingRestaurant = false;
-        _restaurantError =
-            'لم يتم ربط هذا الحساب بأي مطعم. حدّث ownerUid أو بريد مسؤول المطعم من لوحة الإدارة.';
+        _restaurantId = found?.id;
+        _error = found == null
+            ? 'لم يتم ربط هذا الحساب بأي مطعم. اربط الحساب بالمطعم من لوحة الإدارة.'
+            : null;
+        _loading = false;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _loadingRestaurant = false;
-        _restaurantError = 'تعذر تحديد المطعم: $e';
+        _error = 'تعذر تحديد المطعم: $e';
+        _loading = false;
       });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_loadingRestaurant) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+    if (_loading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     if (_restaurantId == null) {
@@ -122,10 +94,7 @@ class _RestaurantDashboardScreenState extends State<RestaurantDashboardScreen> {
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
-            child: Text(
-              _restaurantError ?? 'لم يتم تحديد المطعم',
-              textAlign: TextAlign.center,
-            ),
+            child: Text(_error ?? 'لم يتم تحديد المطعم', textAlign: TextAlign.center),
           ),
         ),
       );
@@ -139,9 +108,9 @@ class _RestaurantDashboardScreenState extends State<RestaurantDashboardScreen> {
       body: IndexedStack(
         index: _selectedIndex,
         children: [
-          _buildOrdersTab(),
-          _buildMenuTab(),
-          _buildAnalyticsTab(),
+          _ordersTab(),
+          _menuTab(),
+          _analyticsTab(),
           const ProfileScreen(),
         ],
       ),
@@ -152,10 +121,7 @@ class _RestaurantDashboardScreenState extends State<RestaurantDashboardScreen> {
         type: BottomNavigationBarType.fixed,
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.list_alt), label: 'الطلبات'),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.restaurant_menu),
-            label: 'المنيو',
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.restaurant_menu), label: 'المنيو'),
           BottomNavigationBarItem(icon: Icon(Icons.bar_chart), label: 'التحليلات'),
           BottomNavigationBarItem(icon: Icon(Icons.person), label: 'حسابي'),
         ],
@@ -163,25 +129,16 @@ class _RestaurantDashboardScreenState extends State<RestaurantDashboardScreen> {
     );
   }
 
-  Widget _buildOrdersTab() {
-    final orderService = Provider.of<OrderService>(context, listen: false);
-
+  Widget _ordersTab() {
+    final service = Provider.of<OrderService>(context, listen: false);
     return StreamBuilder<List<OrderModel>>(
-      stream: orderService.streamRestaurantOrders(_restaurantId!),
+      stream: service.streamRestaurantOrders(_restaurantId!),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
         if (snapshot.hasError) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(
-                'تعذر تحميل الطلبات:\n${snapshot.error}',
-                textAlign: TextAlign.center,
-              ),
-            ),
-          );
+          return Center(child: Text('تعذر تحميل الطلبات:\n${snapshot.error}'));
         }
 
         final orders = snapshot.data ?? [];
@@ -221,20 +178,18 @@ class _RestaurantDashboardScreenState extends State<RestaurantDashboardScreen> {
                         children: [
                           Expanded(
                             child: OutlinedButton(
-                              onPressed: () => orderService.updateOrderStatus(
+                              onPressed: () => service.updateOrderStatus(
                                 order.id,
                                 OrderStatus.cancelled,
                               ),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.red,
-                              ),
+                              style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
                               child: const Text('رفض'),
                             ),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
                             child: ElevatedButton(
-                              onPressed: () => orderService.updateOrderStatus(
+                              onPressed: () => service.updateOrderStatus(
                                 order.id,
                                 OrderStatus.restaurantAccepted,
                               ),
@@ -255,32 +210,15 @@ class _RestaurantDashboardScreenState extends State<RestaurantDashboardScreen> {
   }
 
   Widget _statusChip(OrderStatus status) {
-    late final String text;
-    late final Color color;
-
-    switch (status) {
-      case OrderStatus.pending:
-        text = 'بانتظار المطعم';
-        color = Colors.orange;
-      case OrderStatus.restaurantAccepted:
-        text = 'بانتظار السائق';
-        color = Colors.blue;
-      case OrderStatus.accepted:
-        text = 'تم تعيين سائق';
-        color = Colors.indigo;
-      case OrderStatus.preparing:
-        text = 'تحضير';
-        color = Colors.purple;
-      case OrderStatus.onTheWay:
-        text = 'في الطريق';
-        color = Colors.teal;
-      case OrderStatus.delivered:
-        text = 'مكتمل';
-        color = Colors.green;
-      case OrderStatus.cancelled:
-        text = 'ملغي';
-        color = Colors.red;
-    }
+    final (text, color) = switch (status) {
+      OrderStatus.pending => ('بانتظار المطعم', Colors.orange),
+      OrderStatus.restaurantAccepted => ('بانتظار السائق', Colors.blue),
+      OrderStatus.accepted => ('تم تعيين سائق', Colors.indigo),
+      OrderStatus.preparing => ('تحضير', Colors.purple),
+      OrderStatus.onTheWay => ('في الطريق', Colors.teal),
+      OrderStatus.delivered => ('مكتمل', Colors.green),
+      OrderStatus.cancelled => ('ملغي', Colors.red),
+    };
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
@@ -292,23 +230,19 @@ class _RestaurantDashboardScreenState extends State<RestaurantDashboardScreen> {
     );
   }
 
-  Widget _buildMenuTab() {
+  Widget _menuTab() {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           ElevatedButton.icon(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => AddMenuItemScreen(
-                    restaurantId: _restaurantId!,
-                  ),
-                ),
-              );
-            },
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => AddMenuItemScreen(restaurantId: _restaurantId!),
+              ),
+            ),
             icon: const Icon(Icons.add),
             label: const Text('إضافة صنف جديد'),
           ),
@@ -348,18 +282,18 @@ class _RestaurantDashboardScreenState extends State<RestaurantDashboardScreen> {
                     final category = data['category']?.toString() ?? '';
 
                     return ListTile(
-                      leading: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: imageUrl.isNotEmpty
-                            ? Image.network(
+                      leading: imageUrl.isEmpty
+                          ? _placeholder()
+                          : ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.network(
                                 imageUrl,
                                 width: 60,
                                 height: 60,
                                 fit: BoxFit.cover,
-                                errorBuilder: (_, _, _) => _menuPlaceholder(),
-                              )
-                            : _menuPlaceholder(),
-                      ),
+                                errorBuilder: (_, _, _) => _placeholder(),
+                              ),
+                            ),
                       title: Text(name),
                       subtitle: Text(
                         '${price.toStringAsFixed(2)} د.أ${category.isEmpty ? '' : ' • $category'}',
@@ -379,60 +313,30 @@ class _RestaurantDashboardScreenState extends State<RestaurantDashboardScreen> {
     );
   }
 
-  Widget _menuPlaceholder() {
-    return Container(
-      width: 60,
-      height: 60,
-      color: Colors.grey.shade300,
-      child: const Icon(Icons.fastfood),
-    );
-  }
+  Widget _placeholder() => Container(
+        width: 60,
+        height: 60,
+        color: Colors.grey.shade300,
+        child: const Icon(Icons.fastfood),
+      );
 
-  Widget _buildAnalyticsTab() {
-    final orderService = Provider.of<OrderService>(context, listen: false);
+  Widget _analyticsTab() {
+    final service = Provider.of<OrderService>(context, listen: false);
     return StreamBuilder<List<OrderModel>>(
-      stream: orderService.streamRestaurantOrders(_restaurantId!),
+      stream: service.streamRestaurantOrders(_restaurantId!),
       builder: (context, snapshot) {
         final orders = snapshot.data ?? [];
-        final delivered = orders
+        final revenue = orders
             .where((order) => order.status == OrderStatus.delivered)
-            .toList();
-        final revenue = delivered.fold<double>(
-          0,
-          (sum, order) => sum + order.restaurantNetAmount,
-        );
+            .fold<double>(0, (sum, order) => sum + order.restaurantNetAmount);
 
         return Padding(
           padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
-              const Text(
-                'تحليلات الأداء',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 24),
-              Row(
-                children: [
-                  Expanded(
-                    child: _analyticsCard(
-                      'العوائد',
-                      '${revenue.toStringAsFixed(2)} د.أ',
-                      Icons.payments,
-                      Colors.green,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: _analyticsCard(
-                      'الطلبات',
-                      '${orders.length}',
-                      Icons.event_available,
-                      Colors.blue,
-                    ),
-                  ),
-                ],
-              ),
+              Expanded(child: _analyticsCard('العوائد', '${revenue.toStringAsFixed(2)} د.أ')),
+              const SizedBox(width: 16),
+              Expanded(child: _analyticsCard('الطلبات', '${orders.length}')),
             ],
           ),
         );
@@ -440,28 +344,18 @@ class _RestaurantDashboardScreenState extends State<RestaurantDashboardScreen> {
     );
   }
 
-  Widget _analyticsCard(
-    String title,
-    String value,
-    IconData icon,
-    Color color,
-  ) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        children: [
-          Icon(icon, color: color),
-          const SizedBox(height: 8),
-          Text(title, style: const TextStyle(color: Colors.black54)),
-          Text(
-            value,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-        ],
+  Widget _analyticsCard(String title, String value) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(title, style: const TextStyle(color: Colors.black54)),
+            const SizedBox(height: 8),
+            Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          ],
+        ),
       ),
     );
   }
