@@ -1,10 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:taxi/core/app_theme.dart';
-
-// استيراد شاشة تفاصيل المطعم
 import 'package:taxi/features/home/restaurant_details_screen.dart';
-
 import 'package:taxi/features/orders/my_orders_screen.dart';
 import 'package:taxi/features/profile/profile_screen.dart';
 import 'package:taxi/features/wallet/wallet_screen.dart';
@@ -18,53 +15,45 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
+  String _search = '';
+  String _category = 'الكل';
 
   void _onItemTapped(int index) {
-    if (index == 1) { // My Orders
+    if (index == 1) {
       Navigator.push(
         context,
-        MaterialPageRoute(builder: (context) => const MyOrdersScreen()),
+        MaterialPageRoute(builder: (_) => const MyOrdersScreen()),
       );
       return;
     }
-    if (index == 2) { // Wallet
+    if (index == 2) {
       Navigator.push(
         context,
-        MaterialPageRoute(builder: (context) => const WalletScreen()),
+        MaterialPageRoute(builder: (_) => const WalletScreen()),
       );
       return;
     }
-    if (index == 3) { // Profile
+    if (index == 3) {
       Navigator.push(
         context,
-        MaterialPageRoute(builder: (context) => const ProfileScreen()),
+        MaterialPageRoute(builder: (_) => const ProfileScreen()),
       );
       return;
     }
-    setState(() {
-      _selectedIndex = index;
-    });
+    setState(() => _selectedIndex = index);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Taxi Taste'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications_none),
-            onPressed: () {},
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('Taxi Taste')),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Search Bar
             TextField(
+              onChanged: (value) => setState(() => _search = value.trim().toLowerCase()),
               decoration: InputDecoration(
                 hintText: 'ابحث عن مطعمك المفضل...',
                 prefixIcon: const Icon(Icons.search),
@@ -77,7 +66,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 24),
-            // Banner
             Container(
               height: 180,
               width: double.infinity,
@@ -85,23 +73,30 @@ class _HomeScreenState extends State<HomeScreen> {
                 color: AppTheme.primaryColor,
                 borderRadius: BorderRadius.circular(16),
                 image: const DecorationImage(
-                  image: NetworkImage('https://images.unsplash.com/photo-1504674900247-0877df9cc836?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=60'),
+                  image: NetworkImage(
+                    'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=800&q=60',
+                  ),
                   fit: BoxFit.cover,
                   opacity: 0.6,
                 ),
               ),
               child: const Padding(
-                padding: EdgeInsets.all(20.0),
+                padding: EdgeInsets.all(20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      'خصم 25% على أول حجز',
-                      style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+                      'اطلب من مطعمك المفضل',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
+                    SizedBox(height: 6),
                     Text(
-                      'استخدم الكود: TASTE25',
+                      'اختر الوجبات وأرسل طلبك مباشرة',
                       style: TextStyle(color: Colors.white, fontSize: 16),
                     ),
                   ],
@@ -113,134 +108,142 @@ class _HomeScreenState extends State<HomeScreen> {
               'الأقسام',
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
-            const SizedBox(height: 16),
-            SizedBox(
-              height: 100,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
+            const SizedBox(height: 12),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
                 children: [
-                  categoryItem(Icons.restaurant, 'مطاعم'),
-                  categoryItem(Icons.coffee, 'كافيهات'),
-                  categoryItem(Icons.fastfood, 'سريع'),
-                  categoryItem(Icons.local_pizza, 'بيتزا'),
-                  categoryItem(Icons.icecream, 'حلويات'),
+                  _categoryChip('الكل', Icons.grid_view_rounded),
+                  _categoryChip('مطاعم', Icons.restaurant),
+                  _categoryChip('كافيهات', Icons.coffee),
+                  _categoryChip('سريع', Icons.fastfood),
+                  _categoryChip('بيتزا', Icons.local_pizza),
+                  _categoryChip('حلويات', Icons.icecream),
                 ],
               ),
             ),
             const SizedBox(height: 24),
             const Text(
-              'المطاعم القريبة',
+              'المطاعم المتاحة',
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
-
-            // جلب المطاعم الحقيقية مباشرة من Firestore
-            StreamBuilder<QuerySnapshot>(
+            StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
               stream: FirebaseFirestore.instance.collection('restaurants').snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(
                     child: Padding(
-                      padding: EdgeInsets.all(20.0),
+                      padding: EdgeInsets.all(20),
                       child: CircularProgressIndicator(),
                     ),
                   );
                 }
-
                 if (snapshot.hasError) {
                   return Center(
                     child: Text('حدث خطأ أثناء تحميل المطاعم: ${snapshot.error}'),
                   );
                 }
 
-                final docs = snapshot.data?.docs ?? [];
+                final restaurants = (snapshot.data?.docs ?? []).where((doc) {
+                  final data = doc.data();
+                  final status = data['status']?.toString() ?? 'pending';
+                  final verified = data['verified'] == true;
+                  if (status != 'active' || !verified) return false;
 
-                if (docs.isEmpty) {
-                  return const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(20.0),
-                      child: Text('لا توجد مطاعم مسجلة حالياً'),
-                    ),
+                  final name = data['name']?.toString().toLowerCase() ?? '';
+                  final category = data['category']?.toString() ?? '';
+                  final matchesSearch = _search.isEmpty || name.contains(_search);
+                  final matchesCategory =
+                      _category == 'الكل' || category == _category;
+                  return matchesSearch && matchesCategory;
+                }).toList();
+
+                if (restaurants.isEmpty) {
+                  return const Padding(
+                    padding: EdgeInsets.all(30),
+                    child: Center(child: Text('لا توجد مطاعم مطابقة حالياً')),
                   );
                 }
 
                 return ListView.builder(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
-                  itemCount: docs.length,
+                  itemCount: restaurants.length,
                   itemBuilder: (context, index) {
-                    final restaurantDoc = docs[index];
-                    final data = restaurantDoc.data() as Map<String, dynamic>;
+                    final doc = restaurants[index];
+                    final data = doc.data();
+                    final name = data['name']?.toString() ?? 'مطعم';
+                    final rawUrl = data['imageUrl']?.toString() ?? '';
+                    const defaultImage =
+                        'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=800&q=60';
+                    final imageUrl = rawUrl.trim().isEmpty ? defaultImage : rawUrl;
+                    final rating = (data['rating'] as num? ?? 0).toDouble();
+                    final category = data['category']?.toString() ?? '';
 
-                    final String restaurantId = restaurantDoc.id;
-                    final String name = data['name'] ?? 'مطعم';
-
-                    // المعالجة الآمنة للرابط لمنع خطأ NetworkImage("")
-                    final String rawUrl = data['imageUrl'] ?? '';
-                    final String defaultImage = 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=60';
-                    final String imageUrl = (rawUrl.trim().isEmpty) ? defaultImage : rawUrl;
-
-                    final String rating = data['rating']?.toString() ?? '4.8';
-                    final String distance = data['distance'] ?? '1.2 كم';
-
-                    return GestureDetector(
-                      onTap: () {
-                        Navigator.push(
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 16),
+                      clipBehavior: Clip.antiAlias,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: InkWell(
+                        onTap: () => Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) => RestaurantDetailsScreen(
-                              restaurantId: restaurantId,
+                            builder: (_) => RestaurantDetailsScreen(
+                              restaurantId: doc.id,
                             ),
                           ),
-                        );
-                      },
-                      child: Card(
-                        margin: const EdgeInsets.only(bottom: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Container(
+                            SizedBox(
                               height: 150,
                               width: double.infinity,
-                              decoration: const BoxDecoration(
-                                borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-                              ),
-                              child: ClipRRect(
-                                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                                child: Image.network(
-                                  imageUrl,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) {
-                                    return Container(
-                                      color: Colors.grey[300],
-                                      child: const Icon(
-                                        Icons.restaurant,
-                                        size: 50,
-                                        color: Colors.grey,
-                                      ),
-                                    );
-                                  },
+                              child: Image.network(
+                                imageUrl,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, _, _) => Container(
+                                  color: Colors.grey[300],
+                                  child: const Icon(
+                                    Icons.restaurant,
+                                    size: 50,
+                                    color: Colors.grey,
+                                  ),
                                 ),
                               ),
                             ),
                             Padding(
-                              padding: const EdgeInsets.all(12.0),
+                              padding: const EdgeInsets.all(12),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
                                     name,
-                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 18,
+                                    ),
                                   ),
-                                  const SizedBox(height: 4),
+                                  const SizedBox(height: 5),
                                   Row(
                                     children: [
-                                      Icon(Icons.star, color: Colors.amber[700], size: 16),
-                                      Text(' $rating'),
-                                      const SizedBox(width: 8),
-                                      const Icon(Icons.location_on, color: Colors.grey, size: 16),
-                                      Text(' $distance'),
+                                      if (rating > 0) ...[
+                                        Icon(
+                                          Icons.star,
+                                          color: Colors.amber[700],
+                                          size: 16,
+                                        ),
+                                        Text(' ${rating.toStringAsFixed(1)}'),
+                                        const SizedBox(width: 12),
+                                      ],
+                                      if (category.isNotEmpty)
+                                        Text(
+                                          category,
+                                          style: const TextStyle(color: Colors.grey),
+                                        ),
                                     ],
                                   ),
                                 ],
@@ -265,30 +268,32 @@ class _HomeScreenState extends State<HomeScreen> {
         unselectedItemColor: Colors.grey,
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'الرئيسية'),
-          BottomNavigationBarItem(icon: Icon(Icons.history), label: 'حجوزاتي'),
-          BottomNavigationBarItem(icon: Icon(Icons.account_balance_wallet), label: 'المحفظة'),
+          BottomNavigationBarItem(icon: Icon(Icons.history), label: 'طلباتي'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.account_balance_wallet),
+            label: 'المحفظة',
+          ),
           BottomNavigationBarItem(icon: Icon(Icons.person), label: 'حسابي'),
         ],
       ),
     );
   }
 
-  Widget categoryItem(IconData icon, String label) {
+  Widget _categoryChip(String label, IconData icon) {
+    final selected = _category == label;
     return Padding(
-      padding: const EdgeInsets.only(left: 16),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppTheme.primaryColor.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Icon(icon, color: AppTheme.primaryColor),
-          ),
-          const SizedBox(height: 8),
-          Text(label),
-        ],
+      padding: const EdgeInsets.only(left: 8),
+      child: ChoiceChip(
+        avatar: Icon(
+          icon,
+          size: 18,
+          color: selected ? Colors.white : AppTheme.primaryColor,
+        ),
+        label: Text(label),
+        selected: selected,
+        selectedColor: AppTheme.primaryColor,
+        labelStyle: TextStyle(color: selected ? Colors.white : Colors.black87),
+        onSelected: (_) => setState(() => _category = label),
       ),
     );
   }
