@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:taxi/core/app_theme.dart';
@@ -16,7 +17,7 @@ class RestaurantManagementScreen extends StatefulWidget {
 
 class _RestaurantManagementScreenState
     extends State<RestaurantManagementScreen> {
-  final RestaurantService _restaurantService = RestaurantService();
+  final RestaurantService _service = RestaurantService();
 
   @override
   Widget build(BuildContext context) {
@@ -26,42 +27,33 @@ class _RestaurantManagementScreenState
         centerTitle: true,
       ),
       body: StreamBuilder<List<RestaurantModel>>(
-        stream: _restaurantService.streamRestaurants(),
+        stream: _service.streamRestaurants(),
         builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
           if (snapshot.hasError) {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.error_outline, size: 50, color: Colors.red),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'حدث خطأ أثناء تحميل المطاعم',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 8),
-                    Text('${snapshot.error}', style: const TextStyle(color: Colors.grey)),
-                  ],
+                child: Text(
+                  'حدث خطأ أثناء تحميل المطاعم:\n${snapshot.error}',
+                  textAlign: TextAlign.center,
                 ),
               ),
             );
           }
 
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
           final restaurants = snapshot.data ?? [];
-          if (restaurants.isEmpty) return _buildEmptyState();
+          if (restaurants.isEmpty) {
+            return const Center(child: Text('لا توجد مطاعم حالياً'));
+          }
 
           return ListView.builder(
             padding: const EdgeInsets.all(16),
             itemCount: restaurants.length,
-            itemBuilder: (context, index) {
-              return _buildRestaurantCard(restaurants[index]);
-            },
+            itemBuilder: (context, index) =>
+                _restaurantCard(restaurants[index]),
           );
         },
       ),
@@ -73,367 +65,304 @@ class _RestaurantManagementScreenState
     );
   }
 
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.restaurant_outlined,
-              size: 70, color: AppTheme.primaryColor.withValues(alpha: 0.5)),
-          const SizedBox(height: 16),
-          const Text('لا توجد مطاعم حالياً',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-        ],
-      ),
-    );
-  }
+  Widget _restaurantCard(RestaurantModel restaurant) {
+    final (statusText, statusColor) = switch (restaurant.status) {
+      RestaurantStatus.active => ('نشط', Colors.green),
+      RestaurantStatus.pending => ('بانتظار الموافقة', Colors.orange),
+      RestaurantStatus.suspended => ('موقوف مؤقتاً', Colors.deepOrange),
+      RestaurantStatus.blocked => ('محظور', Colors.red),
+    };
 
-  Widget _buildRestaurantCard(RestaurantModel restaurant) {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         leading: CircleAvatar(
           backgroundColor: AppTheme.primaryColor.withValues(alpha: 0.1),
           child: const Icon(Icons.restaurant, color: AppTheme.primaryColor),
         ),
-        title: Text(restaurant.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 6),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (restaurant.category.isNotEmpty)
-                Text(restaurant.category, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-              if (restaurant.ownerUsername.isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    const Icon(Icons.admin_panel_settings, size: 14, color: Colors.blue),
-                    const SizedBox(width: 4),
-                    Text(
-                      'المسؤول: ${restaurant.ownerUsername}',
-                      style: const TextStyle(fontSize: 12, color: Colors.blue, fontWeight: FontWeight.w500),
+        title: Text(
+          restaurant.name,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (restaurant.category.isNotEmpty) Text(restaurant.category),
+            if (restaurant.ownerUsername.isNotEmpty)
+              Text('المسؤول: ${restaurant.ownerUsername}'),
+            Text(statusText, style: TextStyle(color: statusColor)),
+          ],
+        ),
+        trailing: PopupMenuButton<String>(
+          onSelected: (value) => _handleAction(value, restaurant),
+          itemBuilder: (_) => const [
+            PopupMenuItem(value: 'edit', child: Text('تعديل')),
+            PopupMenuItem(value: 'dashboard', child: Text('لوحة المطعم')),
+            PopupMenuItem(value: 'menu', child: Text('إضافة صنف')),
+            PopupMenuItem(value: 'approve', child: Text('تفعيل')),
+            PopupMenuItem(value: 'suspend', child: Text('إيقاف مؤقت')),
+            PopupMenuItem(value: 'block', child: Text('حظر')),
+            PopupMenuItem(value: 'delete', child: Text('حذف')),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _handleAction(
+    String action,
+    RestaurantModel restaurant,
+  ) async {
+    try {
+      switch (action) {
+        case 'edit':
+          await _showRestaurantDialog(restaurant: restaurant);
+          return;
+        case 'dashboard':
+          if (!mounted) return;
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) =>
+                  RestaurantDashboardScreen(restaurantId: restaurant.id),
+            ),
+          );
+          return;
+        case 'menu':
+          if (!mounted) return;
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => AddMenuItemScreen(restaurantId: restaurant.id),
+            ),
+          );
+          return;
+        case 'approve':
+          await _service.approveRestaurant(restaurant.id);
+          break;
+        case 'suspend':
+          await _service.suspendRestaurant(restaurant.id);
+          break;
+        case 'block':
+          await _service.blockRestaurant(restaurant.id);
+          break;
+        case 'delete':
+          if (!mounted) return;
+          final confirmed = await showDialog<bool>(
+                context: context,
+                builder: (dialogContext) => AlertDialog(
+                  title: const Text('حذف المطعم'),
+                  content: Text('هل تريد حذف ${restaurant.name}؟'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(dialogContext, false),
+                      child: const Text('إلغاء'),
+                    ),
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(dialogContext, true),
+                      child: const Text('حذف'),
                     ),
                   ],
                 ),
-              ],
-              const SizedBox(height: 5),
-              Row(
-                children: [
-                  _buildStatusText(restaurant),
-                  const SizedBox(width: 10),
-                  if (restaurant.rating > 0) ...[
-                    const Icon(Icons.star, size: 14, color: Colors.amber),
-                    const SizedBox(width: 2),
-                    Text(restaurant.rating.toStringAsFixed(1), style: const TextStyle(fontSize: 12)),
-                  ],
-                ],
-              ),
-            ],
-          ),
-        ),
-        trailing: IconButton(
-          icon: const Icon(Icons.more_vert),
-          onPressed: () => _showRestaurantActions(restaurant),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatusText(RestaurantModel restaurant) {
-    String text = 'نشط';
-    Color color = Colors.green;
-    if (restaurant.status == RestaurantStatus.pending) {
-      text = 'بانتظار الموافقة'; color = Colors.orange;
-    } else if (restaurant.status == RestaurantStatus.suspended) {
-      text = 'موقوف مؤقتاً'; color = Colors.orange.shade800;
-    } else if (restaurant.status == RestaurantStatus.blocked) {
-      text = 'محظور'; color = Colors.red;
+              ) ??
+              false;
+          if (confirmed) await _service.deleteRestaurant(restaurant.id);
+          break;
+      }
+    } catch (e) {
+      _showMessage('تعذر تنفيذ العملية: $e', Colors.red);
     }
-    return Text(text, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold));
   }
 
-  void _showRestaurantActions(RestaurantModel restaurant) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (sheetContext) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(restaurant.name,
-                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                      textAlign: TextAlign.center),
-                  const SizedBox(height: 20),
+  Future<String> _resolveOwnerUid(String ownerEmail) async {
+    final email = ownerEmail.trim().toLowerCase();
+    if (email.isEmpty) return '';
 
-                  _actionButton(
-                    icon: Icons.edit_note,
-                    title: 'تعديل بيانات المطعم والمستخدم',
-                    color: Colors.purple,
-                    onPressed: () {
-                      Navigator.pop(sheetContext);
-                      _showRestaurantDialog(restaurant: restaurant);
-                    },
-                  ),
-
-                  _actionButton(
-                    icon: Icons.dashboard,
-                    title: 'لوحة تحكم المطعم والطلبات',
-                    color: AppTheme.primaryColor,
-                    onPressed: () {
-                      Navigator.pop(sheetContext);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => RestaurantDashboardScreen(restaurantId: restaurant.id),
-                        ),
-                      );
-                    },
-                  ),
-
-                  _actionButton(
-                    icon: Icons.restaurant_menu,
-                    title: 'إضافة أصناف إلى المنيو',
-                    color: Colors.orange,
-                    onPressed: () {
-                      Navigator.pop(sheetContext);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => AddMenuItemScreen(restaurantId: restaurant.id),
-                        ),
-                      );
-                    },
-                  ),
-
-                  OutlinedButton.icon(
-                    onPressed: () => Navigator.pop(sheetContext),
-                    icon: const Icon(Icons.close),
-                    label: const Text('إغلاق'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
+    final query = await FirebaseFirestore.instance
+        .collection('users')
+        .where('email', isEqualTo: email)
+        .limit(1)
+        .get();
+    return query.docs.isEmpty ? '' : query.docs.first.id;
   }
 
-  Widget _actionButton({
-    required IconData icon,
-    required String title,
-    required Color color,
-    required VoidCallback onPressed,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: ElevatedButton.icon(
-        onPressed: onPressed,
-        icon: Icon(icon),
-        label: Text(title),
-        style: ElevatedButton.styleFrom(
-          foregroundColor: color,
-          padding: const EdgeInsets.symmetric(vertical: 13),
-        ),
-      ),
-    );
-  }
-
-  void _showRestaurantDialog({RestaurantModel? restaurant}) {
+  Future<void> _showRestaurantDialog({RestaurantModel? restaurant}) async {
     final isEditing = restaurant != null;
     final nameController = TextEditingController(text: restaurant?.name ?? '');
-    final categoryController = TextEditingController(text: restaurant?.category ?? '');
-    final ownerController = TextEditingController(text: restaurant?.ownerUsername ?? '');
-    final tablesController = TextEditingController(text: (restaurant?.tablesCount ?? 0).toString());
-
-    // تعريف الـ Controller الخاص بالنسبة المئوية (الافتراضي 10 أو القيمة المحفوظة كمئوية مثلاً 10% -> 0.10)
+    final categoryController =
+        TextEditingController(text: restaurant?.category ?? '');
+    final ownerController =
+        TextEditingController(text: restaurant?.ownerUsername ?? '');
+    final tablesController = TextEditingController(
+      text: (restaurant?.tablesCount ?? 0).toString(),
+    );
     final commissionController = TextEditingController(
-      text: restaurant != null ? (restaurant.commissionRate * 100).toStringAsFixed(0) : '10',
+      text: ((restaurant?.commissionRate ?? 0.10) * 100).toStringAsFixed(0),
     );
 
-    LatLng? selectedLocation = (restaurant?.latitude != null && restaurant?.longitude != null)
-        ? LatLng(restaurant!.latitude!, restaurant.longitude!)
-        : null;
+    LatLng? selectedLocation =
+        restaurant?.latitude != null && restaurant?.longitude != null
+            ? LatLng(restaurant!.latitude!, restaurant.longitude!)
+            : null;
 
-    showDialog(
+    await showDialog<void>(
       context: context,
       builder: (dialogContext) {
-        bool isSaving = false;
-
+        var saving = false;
         return StatefulBuilder(
-          builder: (dialogContext, setDialogState) {
+          builder: (context, setDialogState) {
             return AlertDialog(
-              title: Text(isEditing ? 'تعديل بيانات المطعم' : 'إضافة مطعم جديد', textAlign: TextAlign.center),
+              title: Text(isEditing ? 'تعديل المطعم' : 'إضافة مطعم'),
               content: SizedBox(
-                width: 500,
+                width: 520,
                 child: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       TextField(
                         controller: nameController,
-                        decoration: const InputDecoration(
-                          labelText: 'اسم المطعم',
-                          prefixIcon: Icon(Icons.restaurant),
-                        ),
+                        decoration: const InputDecoration(labelText: 'اسم المطعم'),
                       ),
                       const SizedBox(height: 12),
                       TextField(
                         controller: categoryController,
-                        decoration: const InputDecoration(
-                          labelText: 'التصنيف',
-                          prefixIcon: Icon(Icons.category),
-                        ),
+                        decoration: const InputDecoration(labelText: 'التصنيف'),
                       ),
                       const SizedBox(height: 12),
                       TextField(
                         controller: ownerController,
+                        keyboardType: TextInputType.emailAddress,
                         decoration: const InputDecoration(
-                          labelText: 'اسم مستخدم الإدارة (Username/Email)',
-                          hintText: 'مثال: manager_rest1',
-                          prefixIcon: Icon(Icons.person_pin),
+                          labelText: 'بريد حساب مسؤول المطعم',
+                          hintText: 'restaurant@example.com',
                         ),
                       ),
                       const SizedBox(height: 12),
                       TextField(
                         controller: tablesController,
                         keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: 'عدد الطاولات',
-                          prefixIcon: Icon(Icons.table_restaurant),
-                        ),
+                        decoration: const InputDecoration(labelText: 'عدد الطاولات'),
                       ),
                       const SizedBox(height: 12),
-                      // حقل النسبة المئوية المضاف حديثاً
                       TextField(
                         controller: commissionController,
-                        keyboardType: TextInputType.number,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         decoration: const InputDecoration(
-                          labelText: 'النسبة المئوية للمطعم (%)',
-                          hintText: 'مثال: 10',
-                          prefixIcon: Icon(Icons.percent),
+                          labelText: 'عمولة الإدارة من المطعم (%)',
                         ),
                       ),
-                      const SizedBox(height: 20),
-                      const Align(
-                        alignment: Alignment.centerRight,
-                        child: Text(
-                          'تحديد الموقع على الخريطة (اضغط على المكان)',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: SizedBox(
-                          height: 220,
-                          width: double.infinity,
-                          child: GoogleMap(
-                            initialCameraPosition: CameraPosition(
-                              target: selectedLocation ?? const LatLng(31.9454, 35.9284),
-                              zoom: 12,
-                            ),
-                            myLocationButtonEnabled: false,
-                            zoomControlsEnabled: true,
-                            onTap: (LatLng location) {
-                              setDialogState(() {
-                                selectedLocation = location;
-                              });
-                            },
-                            markers: selectedLocation == null
-                                ? {}
-                                : {
-                              Marker(
-                                markerId: const MarkerId('restaurant_location'),
-                                position: selectedLocation!,
-                                infoWindow: const InfoWindow(title: 'موقع المطعم'),
-                              ),
-                            },
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        height: 220,
+                        child: GoogleMap(
+                          initialCameraPosition: CameraPosition(
+                            target: selectedLocation ??
+                                const LatLng(31.9454, 35.9284),
+                            zoom: 12,
                           ),
+                          onTap: (location) => setDialogState(
+                            () => selectedLocation = location,
+                          ),
+                          markers: selectedLocation == null
+                              ? <Marker>{}
+                              : {
+                                  Marker(
+                                    markerId: const MarkerId('restaurant'),
+                                    position: selectedLocation!,
+                                  ),
+                                },
+                          myLocationButtonEnabled: false,
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      if (selectedLocation != null)
-                        Text(
-                          'الموقع المحدد: ${selectedLocation!.latitude.toStringAsFixed(5)}, ${selectedLocation!.longitude.toStringAsFixed(5)}',
-                          style: const TextStyle(color: Colors.green, fontSize: 12),
-                        ),
                     ],
                   ),
                 ),
               ),
               actions: [
                 TextButton(
-                  onPressed: isSaving ? null : () => Navigator.pop(dialogContext),
+                  onPressed: saving ? null : () => Navigator.pop(dialogContext),
                   child: const Text('إلغاء'),
                 ),
                 ElevatedButton(
-                  onPressed: isSaving
+                  onPressed: saving
                       ? null
                       : () async {
-                    final name = nameController.text.trim();
-                    final category = categoryController.text.trim();
-                    final owner = ownerController.text.trim();
-                    final tables = int.tryParse(tablesController.text.trim()) ?? 0;
+                          final name = nameController.text.trim();
+                          final category = categoryController.text.trim();
+                          final ownerEmail = ownerController.text.trim().toLowerCase();
+                          final tables = int.tryParse(tablesController.text.trim()) ?? 0;
+                          final percent =
+                              double.tryParse(commissionController.text.trim()) ?? 10;
 
-                    // قراءة النسبة وتحويلها إلى قيمة عشرية (مثلاً 10 تصبح 0.10)
-                    final commissionInput = double.tryParse(commissionController.text.trim()) ?? 10.0;
-                    final commissionRate = commissionInput > 1 ? commissionInput / 100 : commissionInput;
+                          if (name.isEmpty) {
+                            _showMessage('يرجى إدخال اسم المطعم', Colors.red);
+                            return;
+                          }
+                          if (percent < 0 || percent > 100) {
+                            _showMessage('العمولة يجب أن تكون بين 0 و100', Colors.red);
+                            return;
+                          }
 
-                    if (name.isEmpty) {
-                      _showMessage('يرجى إدخال اسم المطعم', Colors.red);
-                      return;
-                    }
+                          setDialogState(() => saving = true);
+                          try {
+                            final ownerUid = ownerEmail.isEmpty
+                                ? (restaurant?.ownerUid ?? '')
+                                : await _resolveOwnerUid(ownerEmail);
 
-                    setDialogState(() => isSaving = true);
+                            if (ownerEmail.isNotEmpty && ownerUid.isEmpty) {
+                              throw Exception(
+                                'لا يوجد مستخدم مسجل بهذا البريد. أنشئ الحساب أولاً ثم اربطه بالمطعم.',
+                              );
+                            }
 
-                    try {
-                      final restaurantData = RestaurantModel(
-                        id: isEditing ? restaurant.id : '',
-                        name: name,
-                        category: category,
-                        ownerUsername: owner,
-                        rating: isEditing ? restaurant.rating : 0,
-                        verified: isEditing ? restaurant.verified : false,
-                        status: isEditing ? restaurant.status : RestaurantStatus.pending,
-                        commissionRate: commissionRate, // تمرير النسبة المحددة
-                        tablesCount: tables,
-                        availableTables: tables,
-                        latitude: selectedLocation?.latitude,
-                        longitude: selectedLocation?.longitude,
-                        createdAt: isEditing ? restaurant.createdAt : DateTime.now(),
-                      );
+                            final model = RestaurantModel(
+                              id: restaurant?.id ?? '',
+                              name: name,
+                              category: category,
+                              ownerUid: ownerUid,
+                              ownerUsername: ownerEmail,
+                              address: restaurant?.address ?? '',
+                              description: restaurant?.description ?? '',
+                              imageUrl: restaurant?.imageUrl ?? '',
+                              rating: restaurant?.rating ?? 0,
+                              verified: restaurant?.verified ?? false,
+                              status: restaurant?.status ?? RestaurantStatus.pending,
+                              commissionRate: percent / 100,
+                              tablesCount: tables,
+                              availableTables: isEditing
+                                  ? (restaurant.availableTables > tables
+                                      ? tables
+                                      : restaurant.availableTables)
+                                  : tables,
+                              latitude: selectedLocation?.latitude,
+                              longitude: selectedLocation?.longitude,
+                              createdAt: restaurant?.createdAt ?? DateTime.now(),
+                            );
 
-                      if (isEditing) {
-                        await _restaurantService.updateRestaurant(
-                          restaurant.id,
-                          restaurantData.toMap(),
-                        );
-                      } else {
-                        await _restaurantService.createRestaurant(restaurantData);
-                      }
+                            if (isEditing) {
+                              await _service.updateRestaurant(
+                                restaurant.id,
+                                model.toMap(),
+                              );
+                            } else {
+                              await _service.createRestaurant(model);
+                            }
 
-                      if (!mounted || !dialogContext.mounted) return;
-                      Navigator.pop(dialogContext);
-                      _showMessage(isEditing ? 'تم تعديل البيانات بنجاح' : 'تمت إضافة المطعم بنجاح', Colors.green);
-                    } catch (e) {
-                      if (!mounted || !dialogContext.mounted) return;
-                      setDialogState(() => isSaving = false);
-                      _showMessage('حدث خطأ: $e', Colors.red);
-                    }
-                  },
-                  child: isSaving
-                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                      : Text(isEditing ? 'حفظ التعديلات' : 'إضافة'),
+                            if (!dialogContext.mounted) return;
+                            Navigator.pop(dialogContext);
+                            _showMessage('تم حفظ بيانات المطعم', Colors.green);
+                          } catch (e) {
+                            setDialogState(() => saving = false);
+                            _showMessage('$e', Colors.red);
+                          }
+                        },
+                  child: saving
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('حفظ'),
                 ),
               ],
             );
@@ -441,10 +370,18 @@ class _RestaurantManagementScreenState
         );
       },
     );
+
+    nameController.dispose();
+    categoryController.dispose();
+    ownerController.dispose();
+    tablesController.dispose();
+    commissionController.dispose();
   }
 
   void _showMessage(String message, Color color) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), backgroundColor: color));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: color),
+    );
   }
 }
