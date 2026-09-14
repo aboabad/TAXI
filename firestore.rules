@@ -28,10 +28,19 @@ service cloud.firestore {
       return signedIn() && userRole() == 'restaurant';
     }
 
+    function restaurantOwnedByCurrentUser(restaurantData) {
+      return signedIn() &&
+        (restaurantData.ownerUid == request.auth.uid ||
+         (request.auth.token.email != null &&
+          restaurantData.ownerUsername == request.auth.token.email));
+    }
+
     function ownsRestaurant(restaurantId) {
       return signedIn() &&
         exists(/databases/$(database)/documents/restaurants/$(restaurantId)) &&
-        get(/databases/$(database)/documents/restaurants/$(restaurantId)).data.ownerUid == request.auth.uid;
+        restaurantOwnedByCurrentUser(
+          get(/databases/$(database)/documents/restaurants/$(restaurantId)).data
+        );
     }
 
     match /users/{userId} {
@@ -54,7 +63,7 @@ service cloud.firestore {
       allow read: if signedIn();
       allow create, delete: if isAdmin();
       allow update: if isAdmin() ||
-        (isRestaurantUser() && resource.data.ownerUid == request.auth.uid);
+        (isRestaurantUser() && restaurantOwnedByCurrentUser(resource.data));
     }
 
     match /menu_items/{itemId} {
