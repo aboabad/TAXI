@@ -1,31 +1,30 @@
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 
 import 'package:taxi/core/app_theme.dart';
 import 'package:taxi/core/auth_service.dart';
+import 'package:taxi/features/admin/admin_dashboard_screen.dart';
+import 'package:taxi/features/auth/login_screen.dart';
 import 'package:taxi/features/driver/driver_home_screen.dart';
 import 'package:taxi/features/home/home_screen.dart';
+import 'package:taxi/features/restaurant/restaurant_dashboard_screen.dart';
 import 'package:taxi/features/splash/splash_screen.dart';
-import 'package:taxi/features/auth/login_screen.dart';
 import 'package:taxi/services/notification_service.dart';
 import 'package:taxi/services/order_service.dart';
 
-// ✅ ربط شاشة الأدمن وشاشة المطعم
-import 'package:taxi/features/admin/admin_dashboard_screen.dart';
-import 'package:taxi/features/restaurant/restaurant_dashboard_screen.dart'; // تأكد إن مسار الشاشة عندك هيك أو عدله حسب مكانها
-
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
 
   await FirebaseAppCheck.instance.activate(
-    androidProvider: AndroidProvider.debug,
-    appleProvider: AppleProvider.debug,
+    androidProvider:
+        kReleaseMode ? AndroidProvider.playIntegrity : AndroidProvider.debug,
+    appleProvider: kReleaseMode ? AppleProvider.appAttest : AppleProvider.debug,
   );
 
   final notificationService = NotificationService();
@@ -59,15 +58,15 @@ class MyApp extends StatelessWidget {
       ],
       supportedLocales: const [Locale('ar')],
       locale: const Locale('ar'),
-
       routes: {
-        '/': (context) => const AuthWrapper(),
-        '/home': (context) => const HomeScreen(),
-        '/login': (context) => const LoginScreen(),
-        '/admin_dashboard': (context) => const AdminDashboardScreen(),
-        '/restaurant_dashboard': (context) => const RestaurantDashboardScreen(),
-        '/driver_dashboard': (context) => const DriverHomeScreen(),
-        '/driver_home_screen': (context) => const DriverHomeScreen(),
+        '/': (_) => const AuthWrapper(),
+        '/home': (_) => const HomeScreen(),
+        '/login': (_) => const LoginScreen(),
+        '/admin_dashboard': (_) => const AdminDashboardScreen(),
+        '/restaurant_dashboard': (_) => const RestaurantDashboardScreen(),
+        '/driver_dashboard': (_) => const DriverHomeScreen(),
+        '/driver_home_screen': (_) => const DriverHomeScreen(),
+        '/moderator_dashboard': (_) => const HomeScreen(),
       },
     );
   }
@@ -87,12 +86,14 @@ class AuthWrapper extends StatelessWidget {
           );
         }
 
-        if (!authSnapshot.hasData || authSnapshot.data == null) {
+        final firebaseUser = authSnapshot.data;
+        if (firebaseUser == null) {
           return const SplashScreen();
         }
 
-        return FutureBuilder<String?>(
-          future: _getUserRole(authSnapshot.data!.uid),
+        final authService = Provider.of<AuthService>(context, listen: false);
+        return FutureBuilder<String>(
+          future: authService.getUserRole(firebaseUser.uid),
           builder: (context, roleSnapshot) {
             if (roleSnapshot.connectionState == ConnectionState.waiting) {
               return const Scaffold(
@@ -100,18 +101,15 @@ class AuthWrapper extends StatelessWidget {
               );
             }
 
-            final userRole = roleSnapshot.data ?? 'user';
-
-            // ✅ التوجيه الصحيح شاملاً دور المطعم
-            switch (userRole) {
+            switch (roleSnapshot.data ?? 'user') {
               case 'admin':
                 return const AdminDashboardScreen();
               case 'driver':
                 return const DriverHomeScreen();
               case 'restaurant':
-                return const RestaurantDashboardScreen(); // 👈 الشاشة المضافة للمطعم
+                return const RestaurantDashboardScreen();
               case 'moderator':
-                return const HomeScreen();
+              case 'user':
               default:
                 return const HomeScreen();
             }
@@ -119,18 +117,5 @@ class AuthWrapper extends StatelessWidget {
         );
       },
     );
-  }
-
-  Future<String?> _getUserRole(String uid) async {
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .get();
-      return doc.data()?['role'] as String?;
-    } catch (e) {
-      debugPrint('Error fetching user role: $e');
-      return null;
-    }
   }
 }
