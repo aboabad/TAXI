@@ -11,6 +11,7 @@ class RestaurantModel {
   final String id;
   final String name;
   final String category;
+  final String ownerUid;
   final String ownerUsername;
   final String address;
   final String description;
@@ -25,10 +26,11 @@ class RestaurantModel {
   final double? longitude;
   final DateTime createdAt;
 
-  RestaurantModel({
+  const RestaurantModel({
     required this.id,
     required this.name,
     required this.category,
+    this.ownerUid = '',
     this.ownerUsername = '',
     this.address = '',
     this.description = '',
@@ -47,38 +49,41 @@ class RestaurantModel {
   factory RestaurantModel.fromMap(Map<String, dynamic> map, String id) {
     return RestaurantModel(
       id: id,
-      name: map['name'] ?? '',
-      category: map['category'] ?? '',
-      ownerUsername: map['ownerUsername'] ?? '',
-      address: map['address'] ?? '',
-      description: map['description'] ?? '',
-      imageUrl: map['imageUrl'] ?? '',
-      rating: (map['rating'] ?? 0).toDouble(),
-      verified: map['verified'] ?? false,
+      name: map['name']?.toString() ?? '',
+      category: map['category']?.toString() ?? '',
+      ownerUid: map['ownerUid']?.toString() ?? '',
+      ownerUsername: map['ownerUsername']?.toString() ?? '',
+      address: map['address']?.toString() ?? '',
+      description: map['description']?.toString() ?? '',
+      imageUrl: map['imageUrl']?.toString() ?? '',
+      rating: (map['rating'] as num? ?? 0).toDouble(),
+      verified: map['verified'] == true,
       status: RestaurantStatus.values.firstWhere(
-            (e) => e.name == map['status'],
+        (status) => status.name == map['status'],
         orElse: () => RestaurantStatus.pending,
       ),
-      commissionRate: (map['commissionRate'] ?? 0.1).toDouble(),
-      tablesCount: map['tablesCount'] ?? 0,
-      availableTables: map['availableTables'] ?? 0,
-      latitude: map['latitude']?.toDouble(),
-      longitude: map['longitude']?.toDouble(),
+      commissionRate: (map['commissionRate'] as num? ?? 0.10).toDouble(),
+      tablesCount: (map['tablesCount'] as num? ?? 0).toInt(),
+      availableTables: (map['availableTables'] as num? ?? 0).toInt(),
+      latitude: (map['latitude'] as num?)?.toDouble(),
+      longitude: (map['longitude'] as num?)?.toDouble(),
       createdAt: map['createdAt'] is Timestamp
           ? (map['createdAt'] as Timestamp).toDate()
           : DateTime.now(),
     );
   }
 
-  factory RestaurantModel.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
-    final data = doc.data() ?? {};
-    return RestaurantModel.fromMap(data, doc.id);
+  factory RestaurantModel.fromFirestore(
+    DocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
+    return RestaurantModel.fromMap(doc.data() ?? {}, doc.id);
   }
 
   Map<String, dynamic> toMap() {
     return {
       'name': name,
       'category': category,
+      'ownerUid': ownerUid,
       'ownerUsername': ownerUsername,
       'address': address,
       'description': description,
@@ -99,6 +104,7 @@ class RestaurantModel {
     String? id,
     String? name,
     String? category,
+    String? ownerUid,
     String? ownerUsername,
     String? address,
     String? description,
@@ -117,6 +123,7 @@ class RestaurantModel {
       id: id ?? this.id,
       name: name ?? this.name,
       category: category ?? this.category,
+      ownerUid: ownerUid ?? this.ownerUid,
       ownerUsername: ownerUsername ?? this.ownerUsername,
       address: address ?? this.address,
       description: description ?? this.description,
