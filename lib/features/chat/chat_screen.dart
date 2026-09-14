@@ -1,16 +1,22 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart' as intl;
 import 'package:provider/provider.dart';
 import 'package:taxi/core/app_theme.dart';
 import 'package:taxi/core/auth_service.dart';
 import 'package:taxi/models/message_model.dart';
 import 'package:taxi/services/chat_service.dart';
-import 'package:intl/intl.dart' as intl;
 
 class ChatScreen extends StatefulWidget {
   final String chatId;
+  final String receiverId;
   final String receiverName;
 
-  const ChatScreen({super.key, required this.chatId, required this.receiverName});
+  const ChatScreen({
+    super.key,
+    required this.chatId,
+    required this.receiverId,
+    required this.receiverName,
+  });
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -19,21 +25,41 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ChatService _chatService = ChatService();
+  bool _sending = false;
 
-  void _sendMessage() async {
+  Future<void> _sendMessage() async {
     final authService = Provider.of<AuthService>(context, listen: false);
-    if (_messageController.text.trim().isEmpty || authService.user == null) return;
+    final user = authService.user;
+    final text = _messageController.text.trim();
 
-    final message = MessageModel(
-      id: '',
-      senderId: authService.user!.uid,
-      receiverId: 'receiver_id', // This should be passed dynamic based on order
-      text: _messageController.text.trim(),
-      timestamp: DateTime.now(),
-    );
+    if (text.isEmpty || user == null || _sending) return;
 
-    _messageController.clear();
-    await _chatService.sendMessage(widget.chatId, message);
+    setState(() => _sending = true);
+    try {
+      final message = MessageModel(
+        id: '',
+        senderId: user.uid,
+        receiverId: widget.receiverId,
+        text: text,
+        timestamp: DateTime.now(),
+      );
+
+      await _chatService.sendMessage(widget.chatId, message);
+      _messageController.clear();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تعذر إرسال الرسالة: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _messageController.dispose();
+    super.dispose();
   }
 
   @override
@@ -42,13 +68,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(widget.receiverName, style: const TextStyle(fontSize: 16)),
-            const Text('متصل الآن', style: TextStyle(fontSize: 10, color: Colors.green)),
-          ],
-        ),
+        title: Text(widget.receiverName, style: const TextStyle(fontSize: 16)),
       ),
       body: Column(
         children: [
@@ -59,15 +79,25 @@ class _ChatScreenState extends State<ChatScreen> {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Text('تعذر تحميل المحادثة: ${snapshot.error}'),
+                  );
+                }
+
                 final messages = snapshot.data ?? [];
+                if (messages.isEmpty) {
+                  return const Center(child: Text('ابدأ المحادثة الآن'));
+                }
+
                 return ListView.builder(
                   reverse: true,
                   padding: const EdgeInsets.all(16),
                   itemCount: messages.length,
                   itemBuilder: (context, index) {
-                    final msg = messages[index];
-                    bool isMe = msg.senderId == authService.user?.uid;
-                    return _buildMessageBubble(msg, isMe);
+                    final message = messages[index];
+                    final isMe = message.senderId == authService.user?.uid;
+                    return _buildMessageBubble(message, isMe);
                   },
                 );
               },
@@ -79,7 +109,7 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  Widget _buildMessageBubble(MessageModel msg, bool isMe) {
+  Widget _buildMessageBubble(MessageModel message, bool isMe) {
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
@@ -98,12 +128,12 @@ class _ChatScreenState extends State<ChatScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              msg.text,
+              message.text,
               style: TextStyle(color: isMe ? Colors.white : Colors.black),
             ),
             const SizedBox(height: 4),
             Text(
-              intl.DateFormat('hh:mm a').format(msg.timestamp),
+              intl.DateFormat('hh:mm a').format(message.timestamp),
               style: TextStyle(
                 fontSize: 10,
                 color: isMe ? Colors.white70 : Colors.black54,
@@ -116,38 +146,52 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildMessageInput() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4)],
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: _messageController,
-              decoration: InputDecoration(
-                hintText: 'اكتب رسالتك هنا...',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(24),
-                  borderSide: BorderSide.none,
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4)],
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _messageController,
+                textInputAction: TextInputAction.send,
+                onSubmitted: (_) => _sendMessage(),
+                decoration: InputDecoration(
+                  hintText: 'اكتب رسالتك هنا...',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(24),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                  filled: true,
+                  fillColor: Colors.grey[100],
                 ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                filled: true,
-                fillColor: Colors.grey[100],
               ),
             ),
-          ),
-          const SizedBox(width: 8),
-          CircleAvatar(
-            backgroundColor: AppTheme.primaryColor,
-            child: IconButton(
-              icon: const Icon(Icons.send, color: Colors.white),
-              onPressed: _sendMessage,
+            const SizedBox(width: 8),
+            CircleAvatar(
+              backgroundColor: AppTheme.primaryColor,
+              child: IconButton(
+                icon: _sending
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.send, color: Colors.white),
+                onPressed: _sending ? null : _sendMessage,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
