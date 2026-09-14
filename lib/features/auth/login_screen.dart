@@ -1,4 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:taxi/core/app_theme.dart';
@@ -15,73 +14,46 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   bool _isLoading = false;
+  bool _obscurePassword = true;
 
-  void _login() async {
-    setState(() => _isLoading = true);
-    final authService = Provider.of<AuthService>(context, listen: false);
+  Future<void> _login() async {
+    final rawInput = _emailController.text.trim();
+    final password = _passwordController.text;
 
-    String inputField = _emailController.text.trim();
-    String password = _passwordController.text.trim();
-
-    if (!inputField.contains('@')) {
-      inputField = '$inputField@taxitaste.com';
+    if (rawInput.isEmpty || password.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('يرجى إدخال البريد الإلكتروني وكلمة المرور'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
     }
 
-    final result = await authService.signIn(
-      inputField,
-      password,
-    );
+    setState(() => _isLoading = true);
 
+    final authService = Provider.of<AuthService>(context, listen: false);
+    final email = rawInput.contains('@') ? rawInput : '$rawInput@taxitaste.com';
+    final result = await authService.signIn(email, password);
+
+    if (!mounted) return;
     setState(() => _isLoading = false);
 
     if (result != null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(result), backgroundColor: Colors.red),
-        );
-      }
-    } else {
-      // ✅ البحث المباشر بالـ email لضمان جلب الـ role الصحيح من جدول users بالفايرستور
-      String userRole = 'user';
-
-      try {
-        QuerySnapshot querySnapshot = await FirebaseFirestore.instance
-            .collection('users')
-            .where('email', isEqualTo: inputField)
-            .limit(1)
-            .get();
-
-        if (querySnapshot.docs.isNotEmpty) {
-          final data = querySnapshot.docs.first.data() as Map<String, dynamic>;
-          if (data.containsKey('role')) {
-            userRole = data['role'] ?? 'user';
-          }
-        }
-      } catch (e) {
-        debugPrint('Error fetching role by email: $e');
-      }
-
-      // حماية إضافية صريحة لإيميلك الأدمن الأساسي
-      if (inputField.toLowerCase() == 'aboabad1990@gmail.com') {
-        userRole = 'admin';
-      }
-
-      debugPrint('Logged in email: $inputField | Assigned Role: $userRole');
-
-      if (mounted) {
-        if (userRole == 'admin') {
-          Navigator.of(context).pushReplacementNamed('/admin_dashboard');
-        } else if (userRole == 'moderator') {
-          Navigator.of(context).pushReplacementNamed('/moderator_dashboard');
-        } else if (userRole == 'restaurant') {
-          Navigator.of(context).pushReplacementNamed('/restaurant_dashboard');
-        } else if (userRole == 'driver') {
-          Navigator.of(context).pushReplacementNamed('/driver_dashboard');
-        } else {
-          Navigator.of(context).pushReplacementNamed('/home');
-        }
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result), backgroundColor: Colors.red),
+      );
+      return;
     }
+
+    Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
   }
 
   @override
@@ -115,30 +87,41 @@ class _LoginScreenState extends State<LoginScreen> {
                 hintText: 'اسم المستخدم أو البريد الإلكتروني',
                 prefixIcon: Icon(Icons.person_outline),
               ),
-              keyboardType: TextInputType.text,
+              keyboardType: TextInputType.emailAddress,
+              textInputAction: TextInputAction.next,
             ),
             const SizedBox(height: 16),
             TextField(
               controller: _passwordController,
-              obscureText: true,
-              decoration: const InputDecoration(
+              obscureText: _obscurePassword,
+              onSubmitted: (_) => _isLoading ? null : _login(),
+              decoration: InputDecoration(
                 hintText: 'كلمة المرور',
-                prefixIcon: Icon(Icons.lock_outline),
-                suffixIcon: Icon(Icons.visibility_off_outlined),
-              ),
-            ),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton(
-                onPressed: () {},
-                child: const Text('نسيت كلمة المرور؟'),
+                prefixIcon: const Icon(Icons.lock_outline),
+                suffixIcon: IconButton(
+                  onPressed: () => setState(
+                    () => _obscurePassword = !_obscurePassword,
+                  ),
+                  icon: Icon(
+                    _obscurePassword
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                  ),
+                ),
               ),
             ),
             const SizedBox(height: 32),
             ElevatedButton(
               onPressed: _isLoading ? null : _login,
               child: _isLoading
-                  ? const CircularProgressIndicator(color: Colors.white)
+                  ? const SizedBox(
+                      height: 22,
+                      width: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
                   : const Text('تسجيل الدخول'),
             ),
           ],
