@@ -45,17 +45,13 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if signedIn() && (request.auth.uid == userId || isAdmin());
-
       allow create: if signedIn() &&
         (isAdmin() ||
-          (request.auth.uid == userId &&
-           request.resource.data.role == 'user'));
-
+         (request.auth.uid == userId && request.resource.data.role == 'user'));
       allow update: if signedIn() &&
         (isAdmin() ||
-          (request.auth.uid == userId &&
-           request.resource.data.role == resource.data.role));
-
+         (request.auth.uid == userId &&
+          request.resource.data.role == resource.data.role));
       allow delete: if isAdmin();
     }
 
@@ -74,7 +70,6 @@ service cloud.firestore {
 
     match /orders/{orderId} {
       allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
-
       allow read: if signedIn() &&
         (isAdmin() ||
          resource.data.userId == request.auth.uid ||
@@ -84,14 +79,12 @@ service cloud.firestore {
           (resource.data.status == 'restaurantAccepted' ||
            resource.data.status == 'accepted' ||
            resource.data.status == 'onTheWay')));
-
       allow update: if signedIn() &&
         (isAdmin() ||
          resource.data.userId == request.auth.uid ||
          resource.data.driverId == request.auth.uid ||
          ownsRestaurant(resource.data.restaurantId) ||
          (isDriver() && resource.data.status == 'restaurantAccepted'));
-
       allow delete: if isAdmin();
     }
 
@@ -108,15 +101,24 @@ service cloud.firestore {
     }
 
     match /chats/{chatId} {
-      allow read, create, update: if signedIn();
+      allow create: if signedIn() &&
+        request.auth.uid in request.resource.data.participants;
+      allow read, update: if signedIn() &&
+        (isAdmin() || request.auth.uid in resource.data.participants);
       allow delete: if isAdmin();
 
       match /messages/{messageId} {
-        allow read: if signedIn();
+        function chatData() {
+          return get(/databases/$(database)/documents/chats/$(chatId)).data;
+        }
+
+        allow read: if signedIn() &&
+          (isAdmin() || request.auth.uid in chatData().participants);
         allow create: if signedIn() &&
-          request.resource.data.senderId == request.auth.uid;
+          request.resource.data.senderId == request.auth.uid &&
+          request.auth.uid in chatData().participants;
         allow update, delete: if signedIn() &&
-          (resource.data.senderId == request.auth.uid || isAdmin());
+          (isAdmin() || resource.data.senderId == request.auth.uid);
       }
     }
   }
