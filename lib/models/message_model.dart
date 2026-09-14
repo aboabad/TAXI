@@ -7,7 +7,7 @@ class MessageModel {
   final String text;
   final DateTime timestamp;
 
-  MessageModel({
+  const MessageModel({
     required this.id,
     required this.senderId,
     required this.receiverId,
@@ -15,14 +15,20 @@ class MessageModel {
     required this.timestamp,
   });
 
-  factory MessageModel.fromFirestore(DocumentSnapshot doc) {
-    Map data = doc.data() as Map<String, dynamic>;
+  factory MessageModel.fromFirestore(
+    DocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
+    final data = doc.data() ?? {};
+    final rawTimestamp = data['timestamp'];
+
     return MessageModel(
       id: doc.id,
-      senderId: data['senderId'] ?? '',
-      receiverId: data['receiverId'] ?? '',
-      text: data['text'] ?? '',
-      timestamp: (data['timestamp'] as Timestamp).toDate(),
+      senderId: data['senderId']?.toString() ?? '',
+      receiverId: data['receiverId']?.toString() ?? '',
+      text: data['text']?.toString() ?? '',
+      timestamp: rawTimestamp is Timestamp
+          ? rawTimestamp.toDate()
+          : DateTime.now(),
     );
   }
 
