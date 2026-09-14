@@ -22,9 +22,9 @@ Future<void> main() async {
   await Firebase.initializeApp();
 
   await FirebaseAppCheck.instance.activate(
-    androidProvider:
+    providerAndroid:
         kReleaseMode ? AndroidProvider.playIntegrity : AndroidProvider.debug,
-    appleProvider: kReleaseMode ? AppleProvider.appAttest : AppleProvider.debug,
+    providerApple: kReleaseMode ? AppleProvider.appAttest : AppleProvider.debug,
   );
 
   final notificationService = NotificationService();
